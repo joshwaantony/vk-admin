@@ -5,6 +5,11 @@ export const getLanguagesApi = async () => {
   return res.data;
 };
 
+export const getActiveLanguagesApi = async () => {
+  const res = await axiosInstance.get("/languages");
+  return res.data;
+};
+
 export const createLanguageApi = async (payload) => {
   const res = await axiosInstance.post("/admin/languages", payload);
   return res.data;

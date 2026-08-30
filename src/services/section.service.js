@@ -29,3 +29,11 @@ export const getSectionByIdApi = async (sectionId) => {
   return res.data.data;
 };
 
+export const reorderSectionsApi = async ({ courseId, orderedSectionIds }) => {
+  const res = await axiosInstance.put("/sections/reorder", {
+    courseId,
+    orderedSectionIds,
+  });
+
+  return res.data;
+};

@@ -9,6 +9,7 @@ import {
   getLessonById,
   updateLesson,
   deleteLesson,
+  reorderLessons,
 } from "@/services/lesson.service";
 
 const useLessonStore = create((set) => ({
@@ -151,6 +152,19 @@ uploadLessonVideo: async (file, onProgress, extras = {}) => {
       await deleteLesson(lessonId);
     } catch (err) {
       set({ error: err?.response?.data?.message || "Lesson delete failed" });
+      throw err;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  reorderLessonsAction: async (payload) => {
+    try {
+      set({ loading: true, error: null });
+      await reorderLessons(payload);
+      return true;
+    } catch (err) {
+      set({ error: err?.response?.data?.message || "Lesson reorder failed" });
       throw err;
     } finally {
       set({ loading: false });

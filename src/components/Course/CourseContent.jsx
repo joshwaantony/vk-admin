@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import { FaPen } from "react-icons/fa";
 import { BiSolidEdit } from "react-icons/bi";
 import { RiDeleteBin5Fill } from "react-icons/ri";
+import { FaChevronDown } from "react-icons/fa";
+import toast from "react-hot-toast";
 
 import useCourseStore from "@/store/useCourseStore";
 import useCategoryStore from "@/store/categoryStore";
+import { getActiveLanguagesApi } from "@/services/languageApi";
 
 export default function ContentInputs({ onCancel, onNext }) {
   const { updateCourse, loading, currentCourse } = useCourseStore();
@@ -15,9 +18,14 @@ export default function ContentInputs({ onCancel, onNext }) {
   const [contents, setContents] = useState(["", "", "", "", ""]);
   const [selectedIds, setSelectedIds] = useState({});
   const [selectedPath, setSelectedPath] = useState([]);
+  const [selectedLanguageId, setSelectedLanguageId] = useState("");
+  const [languages, setLanguages] = useState([]);
+  const [languageLoading, setLanguageLoading] = useState(true);
+  const [languageError, setLanguageError] = useState("");
   const [categoryLoading, setCategoryLoading] = useState(true);
+  const [errors, setErrors] = useState({});
 
-  const isLoading = loading || categoryLoading;
+  const isLoading = loading || categoryLoading || languageLoading;
 
   /* ================= LOAD CATEGORIES ================= */
   useEffect(() => {
@@ -32,8 +40,25 @@ export default function ContentInputs({ onCancel, onNext }) {
       }
     };
 
+    const loadLanguages = async () => {
+      try {
+        setLanguageLoading(true);
+        setLanguageError("");
+        const response = await getActiveLanguagesApi();
+        const apiLanguages = response?.data?.languages || [];
+        setLanguages(apiLanguages);
+      } catch (error) {
+        const message =
+          error?.response?.data?.message || "Failed to fetch languages";
+        setLanguageError(message);
+        setLanguages([]);
+      } finally {
+        setLanguageLoading(false);
+      }
+    };
+
     loadCategories();
-        console.log("loaded course "  , currentCourse)
+    loadLanguages();
 
   }, [fetchCategories]);
 
@@ -57,6 +82,13 @@ export default function ContentInputs({ onCancel, onNext }) {
       setSelectedPath([matchedCategory]);
     }
   }
+
+  setSelectedLanguageId(
+    currentCourse.languageId ||
+      currentCourse.language?.id ||
+      currentCourse.language?.languageId ||
+      "",
+  );
 }, [currentCourse, categories]);
 
   /* ================= CATEGORY LOGIC ================= */
@@ -83,17 +115,37 @@ export default function ContentInputs({ onCancel, onNext }) {
 
   /* ================= SUBMIT ================= */
   const handleSubmit = async () => {
+    const trimmedContents = contents.filter((c) => c.trim());
+    const newErrors = {};
+
+    if (trimmedContents.length === 0) {
+      newErrors.contents = "At least one content title is required";
+    }
+
+    if (!selectedLanguageId) {
+      newErrors.languageId = "This field is required";
+    }
+
+    if (!selectedPath.length && categories?.length) {
+      newErrors.package = "Select a package";
+    }
+
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) return;
+
     const payload = {
-      learningOutcomes: contents.filter((c) => c.trim()),
+      learningOutcomes: trimmedContents,
       categoryIds: selectedPath.map((c) => c.id),
+      languageId: selectedLanguageId,
     };
 
     try {
       await updateCourse(payload);
-      onNext();
+      onNext?.();
     } catch (error) {
       console.error("Update failed:", error);
-      alert(error.message);
+      toast.error(error?.message || "Failed to save course");
     }
   };
 
@@ -160,7 +212,7 @@ export default function ContentInputs({ onCancel, onNext }) {
                         updated[index] = e.target.value;
                         setContents(updated);
                       }}
-                    />
+                      />
 
                     <button type="button">
                       <BiSolidEdit />
@@ -180,6 +232,10 @@ export default function ContentInputs({ onCancel, onNext }) {
                   </div>
                 ))}
 
+                {errors.contents && (
+                  <p className="text-xs text-red-500 mt-1">{errors.contents}</p>
+                )}
+
                 <button
                   type="button"
                   onClick={() => setContents((prev) => [...prev, ""])}
@@ -190,13 +246,47 @@ export default function ContentInputs({ onCancel, onNext }) {
               </div>
 
               {/* RIGHT */}
-              <div className="w-1/2">
+              <div className="w-1/2 flex flex-col items-start">
+                <h1 className="font-semibold mb-3">Select language</h1>
+
+                <div className="relative flex items-center mb-4 w-[85%]">
+                  <select
+                    className="w-full p-[10px] pr-[40px] rounded-[10px] border border-[#bbbfbf] outline-gray-400 bg-white appearance-none"
+                    value={selectedLanguageId}
+                    onChange={(e) => setSelectedLanguageId(e.target.value)}
+                    disabled={languageLoading}
+                  >
+                    <option value="">
+                      {languageLoading ? "Loading languages..." : "Select language"}
+                    </option>
+                    {languages.map((language) => (
+                      <option key={language.id} value={language.id}>
+                        {language.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <FaChevronDown className="absolute right-4 pointer-events-none text-[#606060]" />
+                </div>
+
+                {errors.languageId && (
+                  <p className="text-xs text-red-500 mb-3">{errors.languageId}</p>
+                )}
+
+                {languageError && (
+                  <p className="text-xs text-red-500 mb-3">{languageError}</p>
+                )}
+
                 <h1 className="font-semibold mb-3">Select package</h1>
 
                 {Array.from({ length: selectedPath.length + 1 }).map(
                   (_, level) => (
                     <CategoryDropdown key={level} level={level} />
                   )
+                )}
+
+                {errors.package && (
+                  <p className="text-xs text-red-500 mt-1">{errors.package}</p>
                 )}
               </div>
             </div>
@@ -205,6 +295,7 @@ export default function ContentInputs({ onCancel, onNext }) {
           {/* FOOTER */}
           <div className="px-8 py-4 flex justify-end gap-4">
             <button
+              type="button"
               onClick={onCancel}
               disabled={isLoading}
               className="px-10 py-2 bg-gray-400 text-white rounded-lg"
@@ -213,6 +304,7 @@ export default function ContentInputs({ onCancel, onNext }) {
             </button>
 
             <button
+              type="button"
               onClick={handleSubmit}
               disabled={isLoading}
               className="px-10 py-2 bg-[#1f304a] text-white rounded-lg"
