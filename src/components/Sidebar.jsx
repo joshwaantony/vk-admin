@@ -78,6 +78,7 @@ import {
 import {
   HiOutlineCube,
   HiOutlineBookOpen,
+  HiOutlineClipboardList,
 } from "react-icons/hi";
 
 import { FiMessageSquare } from "react-icons/fi";
@@ -100,6 +101,11 @@ function Sidebar() {
       name: "Courses",
       path: "/courses",
       icon: <HiOutlineBookOpen size={22} />,
+    },
+    {
+      name: "Enrollments",
+      path: "/enrollments",
+      icon: <HiOutlineClipboardList size={22} />,
     },
     {
       name: "Coupons",
