@@ -2,6 +2,8 @@
 "use client";
 import { useCallback, useRef, useState, useEffect } from "react";
 import { flushSync } from "react-dom";
+import { FiMove } from "react-icons/fi";
+import toast from "react-hot-toast";
 import PromoVideoSection from "./PromoVideoSection";
 import LessonSection from "./LessonSection";
 import { GoPlus } from "react-icons/go";
@@ -11,13 +13,18 @@ import { FaPen } from "react-icons/fa";
 
 export default function CreateModules({ onCancel, onFinish }) {
   const { courseId, publishCourseAction, currentCourse } = useCourseStore();
-  const { createSection } = useSectionStore();
+  const { createSection, reorderSections } = useSectionStore();
   const [sections, setSections] = useState([]);
   const [isAdding, setIsAdding] = useState(false);
   const [sectionTitle, setSectionTitle] = useState("");
   const [promoId] = useState(null);
   const [busySections, setBusySections] = useState({});
+  const [draggedSectionId, setDraggedSectionId] = useState(null);
+  const [dragOverSectionId, setDragOverSectionId] = useState(null);
+  const [reorderingSections, setReorderingSections] = useState(false);
   const moduleBusy = Object.values(busySections).some(Boolean);
+  const [finishing, setFinishing] = useState(false);
+  const sectionUiBusy = moduleBusy || reorderingSections;
 
   const [unsavedSections, setUnsavedSections] = useState({});
 const hasUnsavedSection = Object.values(unsavedSections).some(Boolean);
@@ -37,7 +44,6 @@ const setSectionRef = (id) => (el) => {
     delete sectionRefs.current[id];
   }
 };
-const [finishing, setFinishing] = useState(false);
 
 const handleSectionUnsavedChange = useCallback((sectionId, hasUnsaved) => {
   setUnsavedSections((prev) => {
@@ -53,7 +59,7 @@ const handleSectionUnsavedChange = useCallback((sectionId, hasUnsaved) => {
     return { ...prev, [sectionId]: true };
   });
 }, [])
- const handleSectionBusyChange = useCallback((sectionId, busy) => {
+const handleSectionBusyChange = useCallback((sectionId, busy) => {
   setBusySections((prev) => {
     const wasBusy = Boolean(prev[sectionId]);
     if (wasBusy === busy) return prev; // proper no-op
@@ -67,6 +73,8 @@ const handleSectionUnsavedChange = useCallback((sectionId, hasUnsaved) => {
     return { ...prev, [sectionId]: true };
   });
 }, []);
+
+  const canReorderSections = !sectionUiBusy && !finishing;
 
 
   /* ================= PREFILL SECTIONS ON EDIT ================= */
@@ -84,14 +92,14 @@ const handleSectionUnsavedChange = useCallback((sectionId, hasUnsaved) => {
   }, [currentCourse]);
 
   const handleCreateSection = async () => {
-    if (moduleBusy) {
+    if (sectionUiBusy) {
       alert("Please wait until video upload is completed");
       return;
     }
-if (hasUnsavedSection) {
-  alert("Please save the current section's lessons first");
-  return;
-}
+    if (hasUnsavedSection) {
+      alert("Please save the current section's lessons first");
+      return;
+    }
     if (!sectionTitle.trim()) return;
 
     try {
@@ -118,6 +126,8 @@ if (hasUnsavedSection) {
   };
   const handleRemoveSection = (id) => {
   setSections((prev) => prev.filter((s) => s.id !== id));
+  setDraggedSectionId(null);
+  setDragOverSectionId(null);
   setBusySections((prev) => {
     if (!(id in prev)) return prev;
     const next = { ...prev };
@@ -140,8 +150,75 @@ if (hasUnsavedSection) {
     );
   };
 
+  const handleSectionDragStart = (sectionId) => {
+    if (!canReorderSections) return;
+    setDraggedSectionId(sectionId);
+  };
+
+  const handleSectionDragOver = (sectionId, event) => {
+    if (!canReorderSections) return;
+    event.preventDefault();
+
+    if (draggedSectionId !== sectionId) {
+      setDragOverSectionId(sectionId);
+    }
+  };
+
+  const handleSectionDragEnd = () => {
+    setDraggedSectionId(null);
+    setDragOverSectionId(null);
+  };
+
+  const handleSectionDrop = async (targetId) => {
+    if (!canReorderSections || !draggedSectionId || draggedSectionId === targetId) {
+      handleSectionDragEnd();
+      return;
+    }
+
+    const currentOrder = [...sections];
+    const sourceIndex = currentOrder.findIndex((section) => section.id === draggedSectionId);
+    const targetIndex = currentOrder.findIndex((section) => section.id === targetId);
+
+    if (sourceIndex < 0 || targetIndex < 0) {
+      handleSectionDragEnd();
+      return;
+    }
+
+    const nextOrder = [...currentOrder];
+    const [movedSection] = nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(targetIndex, 0, movedSection);
+
+    const orderedSectionIds = nextOrder.map((section) => section.id);
+    const activeCourseId = courseId || currentCourse?.id;
+
+    if (!activeCourseId) {
+      handleSectionDragEnd();
+      toast.error("Course ID not found");
+      return;
+    }
+
+    setSections(nextOrder);
+    handleSectionDragEnd();
+    setReorderingSections(true);
+
+    try {
+      await reorderSections({
+        courseId: activeCourseId,
+        orderedSectionIds,
+      });
+      toast.success("Section order updated successfully");
+    } catch (error) {
+      setSections(currentOrder);
+      toast.error(
+        error?.response?.data?.message || "Failed to update section order",
+      );
+    } finally {
+      setReorderingSections(false);
+    }
+  };
+
   const handleFinish = async () => {
-    if (moduleBusy || finishing) {
+    if (sectionUiBusy || finishing) {
       alert("Please wait until video upload is completed");
       return;
     }
@@ -187,10 +264,10 @@ if (hasUnsavedSection) {
           Create modules
         </h2>
 
-        <PromoVideoSection
+          <PromoVideoSection
           ref={promoRef}
           promoId={promoId}
-          moduleBusy={moduleBusy}
+          moduleBusy={sectionUiBusy}
           onUnsavedChange={handlePromoUnsavedChange}
         />
 
@@ -200,21 +277,41 @@ if (hasUnsavedSection) {
           </div>
 
           {sections.map((section) => (
-            <LessonSection
-  key={section.id}
-  ref={setSectionRef(section.id)}
-  sectionId={section.id}
-  title={section.title}
-  isOpen={section.isOpen}
-  onToggle={() => handleToggleSection(section.id)}
-  onDelete={() => handleRemoveSection(section.id)}
-  initialLessons={section.lessons || []}
-  onBusyChange={(busy) => handleSectionBusyChange(section.id, busy)}
-  onUnsavedChange={(hasUnsaved) =>
-    handleSectionUnsavedChange(section.id, hasUnsaved)
-  }
-  moduleBusy={moduleBusy}
-/>
+            <div
+              key={section.id}
+              draggable={canReorderSections}
+              onDragStart={() => handleSectionDragStart(section.id)}
+              onDragEnter={(e) => handleSectionDragOver(section.id, e)}
+              onDragOver={(e) => handleSectionDragOver(section.id, e)}
+              onDragEnd={handleSectionDragEnd}
+              onDrop={() => handleSectionDrop(section.id)}
+              className={`mb-4 rounded-lg transition ${
+                draggedSectionId === section.id ? "opacity-60" : ""
+              } ${
+                dragOverSectionId === section.id
+                  ? "ring-2 ring-inset ring-[#8BA8D4]"
+                  : ""
+              }`}
+            >
+              <div className="mb-2 flex items-center gap-2 text-xs text-gray-500">
+                <FiMove className="text-gray-400" />
+                <span>Drag to reorder section</span>
+              </div>
+              <LessonSection
+                ref={setSectionRef(section.id)}
+                sectionId={section.id}
+                title={section.title}
+                isOpen={section.isOpen}
+                onToggle={() => handleToggleSection(section.id)}
+                onDelete={() => handleRemoveSection(section.id)}
+                initialLessons={section.lessons || []}
+                onBusyChange={(busy) => handleSectionBusyChange(section.id, busy)}
+                onUnsavedChange={(hasUnsaved) =>
+                  handleSectionUnsavedChange(section.id, hasUnsaved)
+                }
+                moduleBusy={sectionUiBusy}
+              />
+            </div>
           ))}
 
           {isAdding && (
@@ -243,7 +340,7 @@ if (hasUnsavedSection) {
               <button
                 type="button"
                 onClick={handleCreateSection}
-                disabled={moduleBusy}
+                disabled={sectionUiBusy}
                 className="rounded-lg bg-gray-700 px-5 py-2 text-white disabled:opacity-50"
               >
                 Create
@@ -272,7 +369,7 @@ if (hasUnsavedSection) {
             <button
   type="button"
   onClick={() => {
-    if (moduleBusy) {
+    if (sectionUiBusy) {
       alert("Please wait until video upload is completed");
       return;
     }
@@ -282,7 +379,7 @@ if (hasUnsavedSection) {
     }
     setIsAdding(true);
   }}
-  disabled={moduleBusy || hasUnsavedSection}
+  disabled={sectionUiBusy || hasUnsavedSection}
   className="flex items-center gap-1 rounded-lg p-3 shadow-md disabled:cursor-not-allowed disabled:opacity-50"
 >
   <GoPlus /> Add new section
@@ -294,7 +391,7 @@ if (hasUnsavedSection) {
           <button
             type="button"
             onClick={onCancel}
-            disabled={moduleBusy}
+            disabled={sectionUiBusy}
             className="rounded-xl bg-gray-300 px-10 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
@@ -308,7 +405,7 @@ if (hasUnsavedSection) {
           <button
             type="button"
             onClick={handleFinish}
-            disabled={moduleBusy || finishing}
+            disabled={sectionUiBusy || finishing}
             className="rounded-xl bg-gray-700 px-10 py-2 text-white disabled:opacity-50"
           >
             {finishing ? "Finishing..." : "Finish"}

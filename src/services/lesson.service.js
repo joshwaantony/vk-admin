@@ -20,5 +20,5 @@ export const deleteLesson = async (lessonId) => {
 };
 
 export const reorderLessons = async (payload) => {
-  await axiosInstance.post("/lessons/reorder", payload);
+  await axiosInstance.put("/lessons/reorder", payload);
 };

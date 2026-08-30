@@ -4,6 +4,7 @@ import {
   updateSectionApi,
   deleteSectionApi,
   getSectionByIdApi,
+  reorderSectionsApi,
 } from "@/services/section.service";
 
 const useSectionStore = create((set) => ({
@@ -73,8 +74,26 @@ const useSectionStore = create((set) => ({
       set({ loading: false });
     }
   },
+
+  /* ================= REORDER ================= */
+  reorderSections: async ({ courseId, orderedSectionIds }) => {
+    try {
+      set({ loading: true, error: null });
+
+      const data = await reorderSectionsApi({
+        courseId,
+        orderedSectionIds,
+      });
+
+      return data;
+    } catch (error) {
+      set({ error: error?.response?.data?.message || "Reorder failed" });
+      throw error;
+    } finally {
+      set({ loading: false });
+    }
+  },
 }));
 
 export default useSectionStore;
-
 

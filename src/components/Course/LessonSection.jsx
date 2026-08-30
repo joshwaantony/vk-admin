@@ -2,9 +2,11 @@
 "use client";
 import { forwardRef, useState, useEffect, useImperativeHandle, useRef } from "react";
 import { toast } from "react-hot-toast";
+import { FiMove } from "react-icons/fi";
 import SectionCard from "./SectionCard";
 import LessonItem from "./LessonItem";
 import { getLessonById } from "@/services/lesson.service";
+import useLessonStore from "@/store/useLessonStore";
 
 function LessonSection({
   sectionId,
@@ -57,6 +59,10 @@ function LessonSection({
   });
   const [lessons, setLessons] = useState([emptyLesson()]);
   const [fetchingLessons, setFetchingLessons] = useState(false);
+  const [draggedLessonId, setDraggedLessonId] = useState(null);
+  const [dragOverLessonId, setDragOverLessonId] = useState(null);
+  const [reorderingLessons, setReorderingLessons] = useState(false);
+  const { reorderLessonsAction } = useLessonStore();
   const sectionBusy = lessons.some(
     (lesson) => lesson.uploadingVideo || lesson.pollingStatus || lesson.saving,
   );
@@ -69,8 +75,12 @@ function LessonSection({
         l.thumbnailFile ||
         l.thumbnailUrl,
     );
-   const sectionHasUnsaved = lessons.some((l) => !l.isSaved && lessonHasContent(l));
-  const sectionActionsLocked = moduleBusy || sectionBusy;
+  const sectionHasUnsaved = lessons.some((l) => !l.isSaved && lessonHasContent(l));
+  const sectionActionsLocked = moduleBusy || sectionBusy || reorderingLessons;
+  const canReorderLessons = !sectionActionsLocked && !fetchingLessons && lessons.length > 1;
+  const isUuid = (value) =>
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
   /* ================= PREFILL LESSONS FROM API ================= */
   // useEffect(() => {
@@ -252,6 +262,86 @@ useEffect(() => {
     setLessons((prev) => prev.filter((lesson) => lesson.id !== id));
   };
 
+  const handleLessonDragStart = (lessonId, event) => {
+    if (!canReorderLessons) return;
+
+    const interactiveTags = ["INPUT", "TEXTAREA", "BUTTON", "SELECT", "A", "LABEL"];
+    if (interactiveTags.includes(event.target?.tagName)) {
+      event.preventDefault();
+      return;
+    }
+
+    setDraggedLessonId(lessonId);
+  };
+
+  const handleLessonDragOver = (lessonId, event) => {
+    if (!canReorderLessons) return;
+    event.preventDefault();
+
+    if (draggedLessonId !== lessonId) {
+      setDragOverLessonId(lessonId);
+    }
+  };
+
+  const handleLessonDragEnd = () => {
+    setDraggedLessonId(null);
+    setDragOverLessonId(null);
+  };
+
+  const handleLessonDrop = async (targetId) => {
+    if (!canReorderLessons || !draggedLessonId || draggedLessonId === targetId) {
+      handleLessonDragEnd();
+      return;
+    }
+
+    const currentOrder = [...lessons];
+    const sourceIndex = currentOrder.findIndex((lesson) => lesson.id === draggedLessonId);
+    const targetIndex = currentOrder.findIndex((lesson) => lesson.id === targetId);
+
+    if (sourceIndex < 0 || targetIndex < 0) {
+      handleLessonDragEnd();
+      return;
+    }
+
+    const nextOrder = [...currentOrder];
+    const [movedLesson] = nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(targetIndex, 0, movedLesson);
+
+    const hasInvalidLessonIds = nextOrder.some(
+      (lesson) => !isUuid(lesson.backendId || lesson.id),
+    );
+
+    if (hasInvalidLessonIds) {
+      handleLessonDragEnd();
+      toast.error("Save new lessons before reordering");
+      return;
+    }
+
+    const activeLessons = nextOrder.map((lesson, index) => ({
+      id: lesson.backendId || lesson.id,
+      order: index + 1,
+    }));
+
+    setLessons(nextOrder);
+    handleLessonDragEnd();
+    setReorderingLessons(true);
+
+    try {
+      await reorderLessonsAction({
+        sectionId,
+        lessons: activeLessons,
+      });
+      toast.success("Lesson order updated successfully");
+    } catch (error) {
+      setLessons(currentOrder);
+      toast.error(
+        error?.response?.data?.message || "Failed to update lesson order",
+      );
+    } finally {
+      setReorderingLessons(false);
+    }
+  };
+
   // Map of lesson.id -> LessonItem imperative handle, populated by ref callbacks.
   // Used by saveUnsaved() below to persist unsaved-but-content-bearing lessons
   // during the Finish auto-persist loop in CreateModules.
@@ -290,19 +380,39 @@ useEffect(() => {
         <p className="text-sm text-gray-500">Loading lessons...</p>
       ) : (
         <>
-         {lessons.map((lesson, index) => (
-  <LessonItem
-    key={lesson.id}
-    ref={setLessonRef(lesson.id)}
-    sectionId={sectionId}
-    lesson={lesson}
-    order={index}                      // <-- new
-    onUpdateLesson={handleUpdateLesson}
-    onReplaceLesson={handleReplaceLesson}
-    onDeleteLesson={handleDeleteLesson}
-    moduleBusy={moduleBusy}
-  />
-))}
+          {lessons.map((lesson, index) => (
+            <div
+              key={lesson.id}
+              draggable={canReorderLessons}
+              onDragStart={(e) => handleLessonDragStart(lesson.id, e)}
+              onDragEnter={(e) => handleLessonDragOver(lesson.id, e)}
+              onDragOver={(e) => handleLessonDragOver(lesson.id, e)}
+              onDragEnd={handleLessonDragEnd}
+              onDrop={() => handleLessonDrop(lesson.id)}
+              className={`mb-4 rounded-lg transition ${
+                draggedLessonId === lesson.id ? "opacity-60" : ""
+              } ${
+                dragOverLessonId === lesson.id
+                  ? "ring-2 ring-inset ring-[#8BA8D4]"
+                  : ""
+              }`}
+            >
+              <div className="mb-2 flex items-center gap-2 text-xs text-gray-500">
+                <FiMove className="text-gray-400" />
+                <span>Drag to reorder lesson</span>
+              </div>
+              <LessonItem
+                ref={setLessonRef(lesson.id)}
+                sectionId={sectionId}
+                lesson={lesson}
+                order={index}
+                onUpdateLesson={handleUpdateLesson}
+                onReplaceLesson={handleReplaceLesson}
+                onDeleteLesson={handleDeleteLesson}
+                moduleBusy={sectionActionsLocked}
+              />
+            </div>
+          ))}
 
           <div className="mt-6 flex justify-center">
             {/* <button
