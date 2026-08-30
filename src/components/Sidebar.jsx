@@ -72,6 +72,7 @@ import {
   MdDashboard,
   MdOutlineLocalOffer,
   MdOutlineVideoLibrary,
+  MdTranslate,
 } from "react-icons/md";
 
 import {
@@ -116,6 +117,11 @@ function Sidebar() {
       name: "VK's Library",
       path: "/library",
       icon: <MdOutlineVideoLibrary size={22} />,
+    },
+    {
+      name: "Languages",
+      path: "/languages",
+      icon: <MdTranslate size={22} />,
     },
   ];
 
