@@ -1,5 +1,9 @@
 import axios from "axios";
 import axiosInstance from "./axios";
+import {
+  buildPopularReorderRequest,
+  extractPopularList,
+} from "@/components/Course/CourseList/popularOrder";
 
 /* ================= GET ALL COURSES ================= */
 export const getAllCourses = async () => {
@@ -26,6 +30,29 @@ export const reorderCoursesApi = async (orderedCourseIds, languageId) => {
     ? { languageId, orderedCourseIds }
     : { orderedCourseIds };
   const res = await axiosInstance.put("/admin/courses/reorder", body);
+  return res.data;
+};
+
+/* ================= POPULAR COURSES (DISPLAY ORDER) ================= */
+// Separate from the published order above. Global and per-language popular
+// orders are stored independently by the backend.
+// - languageId given  -> that language's popular courses, in its order
+// - languageId omitted -> all popular courses, global popular order
+// Returns the course array.
+export const getPopularCoursesApi = async (languageId, config = {}) => {
+  const res = await axiosInstance.get("/admin/courses/popular", {
+    ...config,
+    params: languageId ? { languageId } : undefined,
+  });
+  const list = extractPopularList(res.data);
+  if (!list) throw new Error("Unexpected response from /admin/courses/popular");
+  return list;
+};
+
+// Always send the COMPLETE ordered list for the scope.
+export const reorderPopularCoursesApi = async (courseIds, languageId) => {
+  const { url, body } = buildPopularReorderRequest(courseIds, languageId || null);
+  const res = await axiosInstance.put(url, body);
   return res.data;
 };
 

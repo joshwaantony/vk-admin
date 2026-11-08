@@ -75,6 +75,18 @@ export function validateOrder(nextList, savedIds, languageId = null) {
 }
 
 /**
+ * validateOrder plus: every course must be marked popular. Courses without
+ * an `isPopular` field are allowed (the backend still re-validates).
+ * validateOrder itself is unchanged.
+ */
+export function validatePopularOrder(nextList, savedIds, languageId = null) {
+  if (Array.isArray(nextList) && nextList.some((c) => c?.isPopular === false)) {
+    return { ok: false, reason: "Only popular courses can be ordered here." };
+  }
+  return validateOrder(nextList, savedIds, languageId);
+}
+
+/**
  * Sorts by displayOrder ascending; courses without one keep their API order
  * at the end.
  */
