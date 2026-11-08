@@ -13,9 +13,11 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Star,
   X,
 } from "lucide-react";
 import useCourseStore from "@/store/useCourseStore";
+import usePopularOrderStore from "@/store/usePopularOrderStore";
 import { getLanguagesApi } from "@/services/languageApi";
 import PublishedOrderList from "@/components/Course/CourseList/PublishedOrderList";
 import ThumbnailUploadDialog from "@/components/Course/CourseList/ThumbnailUploadDialog";
@@ -54,6 +56,15 @@ function Panel({ icon: Icon, tone = "neutral", title, text, children }) {
   );
 }
 
+// Which list is being ordered. Kept in the URL as ?list=popular.
+const MODE_PUBLISHED = "published";
+const MODE_POPULAR = "popular";
+
+const MODES = [
+  { key: MODE_PUBLISHED, label: "All published", icon: ListOrdered },
+  { key: MODE_POPULAR, label: "Popular", icon: Star },
+];
+
 const secondaryBtn =
   "inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -62,21 +73,49 @@ function CourseOrderPageInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const {
-    orderLanguageId,
-    publishedCourses,
-    lastSavedPublished,
-    publishedStatus,
-    publishedError,
-    reorderSaving,
-    lastFailedOrder,
-    fetchPublishedCourses,
-    movePublishedCourse,
-    discardPublishedOrder,
-    dismissFailedOrder,
-    savePublishedOrder,
-    retryPublishedOrder,
-  } = useCourseStore();
+  const mode =
+    searchParams.get("list") === MODE_POPULAR ? MODE_POPULAR : MODE_PUBLISHED;
+  const isPopular = mode === MODE_POPULAR;
+
+  // All published: existing store, used exactly as before.
+  const published = useCourseStore();
+  // Popular: separate store with its own endpoints and state.
+  const popular = usePopularOrderStore();
+
+  // The screen below reads only from `src`, so both modes share one UI.
+  const src = isPopular
+    ? {
+        scopeLanguageId: popular.languageId,
+        courses: popular.courses,
+        lastSaved: popular.lastSaved,
+        status: popular.status,
+        error: popular.error,
+        saving: popular.saving,
+        lastFailedOrder: popular.lastFailedOrder,
+        fetch: popular.fetch,
+        move: popular.move,
+        discard: popular.discard,
+        dismissFailed: popular.dismissFailed,
+        save: popular.save,
+        retry: popular.retry,
+      }
+    : {
+        scopeLanguageId: published.orderLanguageId,
+        courses: published.publishedCourses,
+        lastSaved: published.lastSavedPublished,
+        status: published.publishedStatus,
+        error: published.publishedError,
+        saving: published.reorderSaving,
+        lastFailedOrder: published.lastFailedOrder,
+        fetch: published.fetchPublishedCourses,
+        move: published.movePublishedCourse,
+        discard: published.discardPublishedOrder,
+        dismissFailed: published.dismissFailedOrder,
+        save: published.savePublishedOrder,
+        retry: published.retryPublishedOrder,
+      };
+  // A save in either store blocks switching anywhere on the page.
+  const anySaving = published.reorderSaving || popular.saving;
 
   /* ================= LANGUAGES (existing language API) ================= */
   const [languages, setLanguages] = useState([]);
@@ -127,29 +166,30 @@ function CourseOrderPageInner() {
     : languageNameById.get(selected) || "";
 
   const navigateTo = useCallback(
-    (value) => {
-      const qs =
-        value === GLOBAL_SCOPE
-          ? "scope=global"
-          : `languageId=${encodeURIComponent(value)}`;
-      router.replace(`${pathname}?${qs}`, { scroll: false });
+    (value, nextMode = mode) => {
+      const params = new URLSearchParams();
+      if (nextMode === MODE_POPULAR) params.set("list", MODE_POPULAR);
+      if (value === GLOBAL_SCOPE) params.set("scope", "global");
+      else if (value) params.set("languageId", value);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [router, pathname]
+    [router, pathname, mode]
   );
 
+  const fetchActive = src.fetch; // stable reference per store
   useEffect(() => {
     if (!selected) return;
-    fetchPublishedCourses(selected === GLOBAL_SCOPE ? null : selected);
-  }, [selected, fetchPublishedCourses]);
+    fetchActive(selected === GLOBAL_SCOPE ? null : selected);
+  }, [selected, fetchActive]);
 
   /* ================= DIRTY / STATUS ================= */
   const dirty =
-    publishedStatus === "ready" &&
-    (orderLanguageId || GLOBAL_SCOPE) === selected &&
-    !sameOrder(publishedCourses, lastSavedPublished);
+    src.status === "ready" &&
+    (src.scopeLanguageId || GLOBAL_SCOPE) === selected &&
+    !sameOrder(src.courses, src.lastSaved);
   const [justSaved, setJustSaved] = useState(false);
   const [announcement, setAnnouncement] = useState("");
-  const [pending, setPending] = useState(null); // { type: "scope", value } | { type: "reload" }
+  const [pending, setPending] = useState(null); // { type: "scope" | "mode", value } | { type: "reload" }
   const [thumbCourse, setThumbCourse] = useState(null);
 
   useEffect(() => {
@@ -157,7 +197,7 @@ function CourseOrderPageInner() {
   }, [dirty]);
   useEffect(() => {
     setJustSaved(false);
-  }, [selected]);
+  }, [selected, mode]);
 
   // Browser-level guard for reload / tab close with unsaved order.
   useEffect(() => {
@@ -171,47 +211,57 @@ function CourseOrderPageInner() {
   }, [dirty]);
 
   const savedIndexById = useMemo(
-    () => new Map(lastSavedPublished.map((c, i) => [c.id, i])),
-    [lastSavedPublished]
+    () => new Map(src.lastSaved.map((c, i) => [c.id, i])),
+    [src.lastSaved]
   );
 
   /* ================= ACTIONS ================= */
   const requestScope = (value) => {
-    if (value === selected || reorderSaving) return;
+    if (value === selected || anySaving) return;
     if (dirty) setPending({ type: "scope", value });
     else navigateTo(value);
   };
 
+  // Switching list keeps the selected language / global scope.
+  const requestMode = (value) => {
+    if (value === mode || anySaving) return;
+    if (dirty) setPending({ type: "mode", value });
+    else navigateTo(selected, value);
+  };
+
   const requestReload = () => {
-    if (reorderSaving) return;
+    if (anySaving) return;
     if (dirty) setPending({ type: "reload" });
-    else fetchPublishedCourses(isGlobal ? null : selected);
+    else src.fetch(isGlobal ? null : selected);
   };
 
   const confirmPending = () => {
     const action = pending;
     setPending(null);
-    discardPublishedOrder();
+    src.discard();
     if (action?.type === "scope") navigateTo(action.value);
-    if (action?.type === "reload") fetchPublishedCourses(isGlobal ? null : selected);
+    if (action?.type === "mode") navigateTo(selected, action.value);
+    if (action?.type === "reload") src.fetch(isGlobal ? null : selected);
   };
 
   const handleMove = (from, to) => {
-    const course = publishedCourses[from];
-    if (movePublishedCourse(from, to)) {
+    const course = src.courses[from];
+    if (src.move(from, to)) {
       setAnnouncement(
-        `Moved ${course?.title} to position ${to + 1} of ${publishedCourses.length}. Unsaved.`
+        `Moved ${course?.title} to position ${to + 1} of ${src.courses.length}. Unsaved.`
       );
     }
   };
+
+  const orderLabel = `${scopeName}${isPopular ? " popular" : ""} order`;
 
   const runSave = async (fn) => {
     try {
       const saved = await fn();
       if (saved) {
         setJustSaved(true);
-        setAnnouncement(`${scopeName} order saved.`);
-        toast.success(`${scopeName} order saved`, { id: "course-order" });
+        setAnnouncement(`${orderLabel} saved.`);
+        toast.success(`${orderLabel} saved`, { id: "course-order" });
       }
     } catch (err) {
       const message = getApiErrorMessage(err, "Failed to save course order");
@@ -221,19 +271,19 @@ function CourseOrderPageInner() {
   };
 
   const handleDiscard = () => {
-    discardPublishedOrder();
+    src.discard();
     setAnnouncement("Changes discarded.");
   };
 
   /* ================= RENDER ================= */
   // Also "loading" while the store still holds another scope's list, so a
   // previous language's courses are never shown under the new selection.
-  const storeScope = orderLanguageId || GLOBAL_SCOPE;
+  const storeScope = src.scopeLanguageId || GLOBAL_SCOPE;
   const listLoading =
     !selected ||
     storeScope !== selected ||
-    publishedStatus === "idle" ||
-    publishedStatus === "loading";
+    src.status === "idle" ||
+    src.status === "loading";
 
   const renderBody = () => {
     if (langStatus === "error") {
@@ -261,17 +311,17 @@ function CourseOrderPageInner() {
       );
     }
 
-    if (publishedStatus === "error") {
+    if (src.status === "error") {
       return (
         <Panel
           icon={AlertTriangle}
           tone="error"
-          title={`Couldn't load ${scopeName} courses`}
-          text={getApiErrorMessage(publishedError, "Something went wrong. Please try again.")}
+          title={`Couldn't load ${scopeName}${isPopular ? " popular" : ""} courses`}
+          text={getApiErrorMessage(src.error, "Something went wrong. Please try again.")}
         >
           <button
             type="button"
-            onClick={() => fetchPublishedCourses(isGlobal ? null : selected)}
+            onClick={() => src.fetch(isGlobal ? null : selected)}
             className={secondaryBtn}
           >
             <RefreshCw size={16} /> Retry
@@ -280,16 +330,19 @@ function CourseOrderPageInner() {
       );
     }
 
-    if (!publishedCourses.length) {
+    if (!src.courses.length) {
+      const kind = isPopular ? "popular" : "published";
       return (
         <Panel
-          icon={ListOrdered}
+          icon={isPopular ? Star : ListOrdered}
           title={
-            isGlobal
-              ? "No published courses yet"
-              : `No published courses in ${scopeName}`
+            isGlobal ? `No ${kind} courses yet` : `No ${kind} courses in ${scopeName}`
           }
-          text="Publish a course and it will appear here for ordering."
+          text={
+            isPopular
+              ? "Mark a published course as Popular in Course Management and it will appear here for ordering."
+              : "Publish a course and it will appear here for ordering."
+          }
         >
           <Link
             href="/courses"
@@ -303,8 +356,8 @@ function CourseOrderPageInner() {
 
     return (
       <PublishedOrderList
-        courses={publishedCourses}
-        saving={reorderSaving}
+        courses={src.courses}
+        saving={src.saving}
         onMove={handleMove}
         onChangeThumbnail={setThumbCourse}
         savedIndexById={savedIndexById}
@@ -313,7 +366,7 @@ function CourseOrderPageInner() {
     );
   };
 
-  const statusChip = reorderSaving ? (
+  const statusChip = src.saving ? (
     <span className="inline-flex items-center gap-1.5 text-sm text-slate-600">
       <Loader2 size={15} className="animate-spin" /> Saving…
     </span>
@@ -327,7 +380,7 @@ function CourseOrderPageInner() {
     </span>
   ) : null;
 
-  const ready = !listLoading && publishedStatus === "ready" && langStatus === "ready";
+  const ready = !listLoading && src.status === "ready" && langStatus === "ready";
 
   return (
     <div className="w-full px-4 pb-8 pt-4 sm:px-6 md:px-8">
@@ -343,8 +396,38 @@ function CourseOrderPageInner() {
           Course display order
         </h1>
         <p className="mt-0.5 text-xs text-slate-500">
-          Manage published courses and control their display order by language.
+          {isPopular
+            ? "Order popular courses globally or within each language. Each order is saved separately."
+            : "Manage published courses and control their display order by language."}
         </p>
+      </div>
+
+      {/* List mode */}
+      <div
+        role="group"
+        aria-label="Course list to order"
+        className="mt-3 inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
+      >
+        {MODES.map(({ key, label, icon: Icon }) => {
+          const active = mode === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => requestMode(key)}
+              disabled={anySaving}
+              className={`inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                active
+                  ? "bg-[#1F304A] text-white"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <Icon size={13} />
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Toolbar */}
@@ -355,15 +438,15 @@ function CourseOrderPageInner() {
               languages={languages}
               value={selected || ""}
               onChange={requestScope}
-              disabled={langStatus !== "ready" || reorderSaving}
+              disabled={langStatus !== "ready" || anySaving}
               loading={langStatus === "loading" || (listLoading && langStatus === "ready")}
             />
             {ready && (
               <p className="text-xs text-slate-500">
                 <span className="font-medium capitalize text-slate-800">{scopeName}</span>
                 {" · "}
-                {publishedCourses.length} published{" "}
-                {publishedCourses.length === 1 ? "course" : "courses"}
+                {src.courses.length} {isPopular ? "popular" : "published"}{" "}
+                {src.courses.length === 1 ? "course" : "courses"}
                 {isGlobal && " · global order"}
               </p>
             )}
@@ -376,7 +459,7 @@ function CourseOrderPageInner() {
             <button
               type="button"
               onClick={requestReload}
-              disabled={!selected || listLoading || reorderSaving}
+              disabled={!selected || listLoading || anySaving}
               className={secondaryBtn}
               title="Reload from server"
               aria-label="Reload from server"
@@ -386,26 +469,26 @@ function CourseOrderPageInner() {
             <button
               type="button"
               onClick={handleDiscard}
-              disabled={!dirty || reorderSaving}
+              disabled={!dirty || src.saving}
               className={secondaryBtn}
             >
               <RotateCcw size={14} /> Discard
             </button>
             <button
               type="button"
-              onClick={() => runSave(savePublishedOrder)}
-              disabled={!dirty || reorderSaving}
+              onClick={() => runSave(src.save)}
+              disabled={!dirty || src.saving}
               className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-[#1F304A] px-3 text-xs font-medium text-white shadow-sm transition hover:bg-[#2B4162] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {reorderSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {reorderSaving ? "Saving…" : "Save Order"}
+              {src.saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {src.saving ? "Saving…" : "Save Order"}
             </button>
           </div>
         </div>
       </div>
 
       {/* Failed save */}
-      {lastFailedOrder && !reorderSaving && (
+      {src.lastFailedOrder && !src.saving && (
         <div
           role="alert"
           className="mt-4 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:flex-row sm:items-center"
@@ -418,14 +501,14 @@ function CourseOrderPageInner() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => runSave(retryPublishedOrder)}
+              onClick={() => runSave(src.retry)}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-red-600 px-3 text-sm font-medium text-white hover:bg-red-700"
             >
               <RefreshCw size={15} /> Retry save
             </button>
             <button
               type="button"
-              onClick={dismissFailedOrder}
+              onClick={src.dismissFailed}
               aria-label="Dismiss"
               className="flex h-9 w-9 items-center justify-center rounded-lg text-red-700 hover:bg-red-100"
             >
@@ -450,13 +533,15 @@ function CourseOrderPageInner() {
             <span className="font-medium capitalize text-slate-900">
               {scopeName}
             </span>{" "}
-            order.{" "}
+            {isPopular ? "popular " : ""}order.{" "}
             {pending?.type === "scope"
               ? "Switching language will discard them."
+              : pending?.type === "mode"
+              ? "Switching list will discard them."
               : "Reloading will discard them."}
           </>
         }
-        confirmLabel={pending?.type === "scope" ? "Discard & switch" : "Discard & reload"}
+        confirmLabel={pending?.type === "reload" ? "Discard & reload" : "Discard & switch"}
         tone="danger"
         icon={AlertTriangle}
         onConfirm={confirmPending}
@@ -467,6 +552,7 @@ function CourseOrderPageInner() {
         <ThumbnailUploadDialog
           course={thumbCourse}
           onClose={() => setThumbCourse(null)}
+          onSaved={isPopular ? popular.patchThumbnail : undefined}
         />
       )}
     </div>

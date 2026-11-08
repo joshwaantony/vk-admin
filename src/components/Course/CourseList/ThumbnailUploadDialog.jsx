@@ -14,7 +14,8 @@ import { getApiErrorMessage } from "./courseStatus";
  *   2. PUT /courses/:id { thumbnail }
  * The existing thumbnail is left untouched unless BOTH steps succeed.
  */
-export default function ThumbnailUploadDialog({ course, onClose }) {
+// onSaved (optional): called with (courseId, url) after the backend confirms.
+export default function ThumbnailUploadDialog({ course, onClose, onSaved }) {
   const updateCourseThumbnail = useCourseStore((s) => s.updateCourseThumbnail);
 
   const [file, setFile] = useState(null);
@@ -95,6 +96,7 @@ export default function ThumbnailUploadDialog({ course, onClose }) {
 
       setPhase("saving");
       await updateCourseThumbnail(course.id, url);
+      onSaved?.(course.id, url);
 
       toast.success("Thumbnail updated");
       onClose();
