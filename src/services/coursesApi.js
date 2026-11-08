@@ -1,14 +1,22 @@
 import axios from "axios";
 import axiosInstance from "./axios";
+import { fetchAllPages } from "./paginate";
 import {
   buildPopularReorderRequest,
   extractPopularList,
 } from "@/components/Course/CourseList/popularOrder";
 
 /* ================= GET ALL COURSES ================= */
+// The endpoint is paginated ({ data: { items, pagination } }). The Course
+// Management page filters, counts and pages on the client, so it needs every
+// course: all pages are fetched (backend default page size) and returned as
+// { data: [...] }.
 export const getAllCourses = async () => {
-  const res = await axiosInstance.get("/admin/courses");
-  return res.data;
+  const items = await fetchAllPages(async (page) => {
+    const res = await axiosInstance.get("/admin/courses", { params: { page } });
+    return res.data;
+  });
+  return { data: items };
 };
 
 /* ================= PUBLISHED COURSES (DISPLAY ORDER) ================= */
