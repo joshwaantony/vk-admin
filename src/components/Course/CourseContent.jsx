@@ -4,28 +4,31 @@ import { useEffect, useState } from "react";
 import { FaPen } from "react-icons/fa";
 import { BiSolidEdit } from "react-icons/bi";
 import { RiDeleteBin5Fill } from "react-icons/ri";
-import { FaChevronDown } from "react-icons/fa";
 import toast from "react-hot-toast";
 
 import useCourseStore from "@/store/useCourseStore";
 import useCategoryStore from "@/store/categoryStore";
-import { getActiveLanguagesApi } from "@/services/languageApi";
 
-export default function ContentInputs({ onCancel, onNext }) {
+export default function ContentInputs({ onCancel, onNext, initialLanguageId = "" }) {
   const { updateCourse, loading, currentCourse } = useCourseStore();
   const { categories, fetchCategories } = useCategoryStore();
 
   const [contents, setContents] = useState(["", "", "", "", ""]);
   const [selectedIds, setSelectedIds] = useState({});
   const [selectedPath, setSelectedPath] = useState([]);
-  const [selectedLanguageId, setSelectedLanguageId] = useState("");
-  const [languages, setLanguages] = useState([]);
-  const [languageLoading, setLanguageLoading] = useState(true);
-  const [languageError, setLanguageError] = useState("");
   const [categoryLoading, setCategoryLoading] = useState(true);
   const [errors, setErrors] = useState({});
 
-  const isLoading = loading || categoryLoading || languageLoading;
+  // The language is chosen in step 1 (CreateCourse). It is not editable here,
+  // but is still sent with this step's update so the course keeps it.
+  const languageId =
+    initialLanguageId ||
+    currentCourse?.languageId ||
+    currentCourse?.language?.id ||
+    currentCourse?.language?.languageId ||
+    "";
+
+  const isLoading = loading || categoryLoading;
 
   /* ================= LOAD CATEGORIES ================= */
   useEffect(() => {
@@ -40,25 +43,7 @@ export default function ContentInputs({ onCancel, onNext }) {
       }
     };
 
-    const loadLanguages = async () => {
-      try {
-        setLanguageLoading(true);
-        setLanguageError("");
-        const response = await getActiveLanguagesApi();
-        const apiLanguages = response?.data?.languages || [];
-        setLanguages(apiLanguages);
-      } catch (error) {
-        const message =
-          error?.response?.data?.message || "Failed to fetch languages";
-        setLanguageError(message);
-        setLanguages([]);
-      } finally {
-        setLanguageLoading(false);
-      }
-    };
-
     loadCategories();
-    loadLanguages();
 
   }, [fetchCategories]);
 
@@ -82,13 +67,6 @@ export default function ContentInputs({ onCancel, onNext }) {
       setSelectedPath([matchedCategory]);
     }
   }
-
-  setSelectedLanguageId(
-    currentCourse.languageId ||
-      currentCourse.language?.id ||
-      currentCourse.language?.languageId ||
-      "",
-  );
 }, [currentCourse, categories]);
 
   /* ================= CATEGORY LOGIC ================= */
@@ -122,10 +100,6 @@ export default function ContentInputs({ onCancel, onNext }) {
       newErrors.contents = "At least one content title is required";
     }
 
-    if (!selectedLanguageId) {
-      newErrors.languageId = "This field is required";
-    }
-
     if (!selectedPath.length && categories?.length) {
       newErrors.package = "Select a package";
     }
@@ -137,7 +111,7 @@ export default function ContentInputs({ onCancel, onNext }) {
     const payload = {
       learningOutcomes: trimmedContents,
       categoryIds: selectedPath.map((c) => c.id),
-      languageId: selectedLanguageId,
+      ...(languageId ? { languageId } : {}),
     };
 
     try {
@@ -247,36 +221,6 @@ export default function ContentInputs({ onCancel, onNext }) {
 
               {/* RIGHT */}
               <div className="w-1/2 flex flex-col items-start">
-                <h1 className="font-semibold mb-3">Select language</h1>
-
-                <div className="relative flex items-center mb-4 w-[85%]">
-                  <select
-                    className="w-full p-[10px] pr-[40px] rounded-[10px] border border-[#bbbfbf] outline-gray-400 bg-white appearance-none"
-                    value={selectedLanguageId}
-                    onChange={(e) => setSelectedLanguageId(e.target.value)}
-                    disabled={languageLoading}
-                  >
-                    <option value="">
-                      {languageLoading ? "Loading languages..." : "Select language"}
-                    </option>
-                    {languages.map((language) => (
-                      <option key={language.id} value={language.id}>
-                        {language.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <FaChevronDown className="absolute right-4 pointer-events-none text-[#606060]" />
-                </div>
-
-                {errors.languageId && (
-                  <p className="text-xs text-red-500 mb-3">{errors.languageId}</p>
-                )}
-
-                {languageError && (
-                  <p className="text-xs text-red-500 mb-3">{languageError}</p>
-                )}
-
                 <h1 className="font-semibold mb-3">Select package</h1>
 
                 {Array.from({ length: selectedPath.length + 1 }).map(

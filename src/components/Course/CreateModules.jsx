@@ -93,11 +93,11 @@ const handleSectionBusyChange = useCallback((sectionId, busy) => {
 
   const handleCreateSection = async () => {
     if (sectionUiBusy) {
-      alert("Please wait until video upload is completed");
+      toast.error("Please wait until video upload is completed", { id: "modules-busy" });
       return;
     }
     if (hasUnsavedSection) {
-      alert("Please save the current section's lessons first");
+      toast.error("Please save the current section's lessons first", { id: "modules-unsaved" });
       return;
     }
     if (!sectionTitle.trim()) return;
@@ -120,8 +120,8 @@ const handleSectionBusyChange = useCallback((sectionId, busy) => {
 
       setSectionTitle("");
       setIsAdding(false);
-    } catch {
-      alert("Failed to create section");
+    } catch (error) {
+      toast.error(error?.response?.data?.message || "Failed to create section");
     }
   };
   const handleRemoveSection = (id) => {
@@ -219,7 +219,7 @@ const handleSectionBusyChange = useCallback((sectionId, busy) => {
 
   const handleFinish = async () => {
     if (sectionUiBusy || finishing) {
-      alert("Please wait until video upload is completed");
+      toast.error("Please wait until video upload is completed", { id: "modules-busy" });
       return;
     }
 
@@ -250,8 +250,8 @@ const handleSectionBusyChange = useCallback((sectionId, busy) => {
         await publishCourseAction(courseId);
       }
       onFinish();
-    } catch {
-      alert("Failed to finish course");
+    } catch (error) {
+      toast.error(error?.response?.data?.message || "Failed to finish course");
     } finally {
       setFinishing(false);
     }
@@ -370,11 +370,11 @@ const handleSectionBusyChange = useCallback((sectionId, busy) => {
   type="button"
   onClick={() => {
     if (sectionUiBusy) {
-      alert("Please wait until video upload is completed");
+      toast.error("Please wait until video upload is completed", { id: "modules-busy" });
       return;
     }
     if (hasUnsavedSection) {
-      alert("Please save the current section's lessons before adding a new section");
+      toast.error("Please save the current section's lessons before adding a new section", { id: "modules-unsaved" });
       return;
     }
     setIsAdding(true);

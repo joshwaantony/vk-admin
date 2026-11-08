@@ -8,6 +8,8 @@ import useCourseStore from "@/store/useCourseStore";
 export default function CourseWizard({ onClose }) {
   const { currentCourse } = useCourseStore();
   const [step, setStep] = useState(1);
+  // Language chosen in step 1, used to prefill step 2.
+  const [languageId, setLanguageId] = useState("");
 
   useEffect(() => {
     setStep(1);
@@ -18,7 +20,10 @@ export default function CourseWizard({ onClose }) {
       {step === 1 && (
         <CreateCourse
           onCancel={onClose}
-          onSuccess={() => setStep(2)}
+          onSuccess={(_courseId, selectedLanguageId) => {
+            setLanguageId(selectedLanguageId || "");
+            setStep(2);
+          }}
         />
       )}
 
@@ -26,6 +31,7 @@ export default function CourseWizard({ onClose }) {
         <CourseContent
           onCancel={onClose}
           onBack={() => setStep(1)}
+          initialLanguageId={languageId}
           onNext={() => setStep(3)}
         />
       )}

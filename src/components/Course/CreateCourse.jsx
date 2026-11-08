@@ -457,6 +457,7 @@ import { MdAccountCircle } from "react-icons/md";
 import { GrGallery } from "react-icons/gr";
 import { MdOutlineFileUpload } from "react-icons/md";
 import toast from "react-hot-toast";
+import { getActiveLanguagesApi } from "@/services/languageApi";
 
 export default function CreateCourse({ onCancel, onSuccess }) {
   const { createCourse, loading, currentCourse, updateCourse, courses } =
@@ -485,6 +486,57 @@ export default function CreateCourse({ onCancel, onSuccess }) {
     imageUrl: "",
   });
 const anyUploading = thumbnailUploading || facultyUploading;
+
+  /* ================= LANGUAGE (required by POST /courses) ================= */
+  const [languageId, setLanguageId] = useState("");
+  const [languages, setLanguages] = useState([]);
+  const [languageLoading, setLanguageLoading] = useState(true);
+  const [languageError, setLanguageError] = useState("");
+  const [languageReloadKey, setLanguageReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadLanguages = async () => {
+      try {
+        setLanguageLoading(true);
+        setLanguageError("");
+        // Time out instead of showing "Loading languages..." forever if the
+        // API hangs.
+        const response = await getActiveLanguagesApi({ timeout: 15000 });
+        if (!cancelled) setLanguages(response?.data?.languages || []);
+      } catch (error) {
+        if (!cancelled) {
+          setLanguageError(
+            error?.code === "ECONNABORTED"
+              ? "Loading languages timed out."
+              : error?.response?.data?.message || "Failed to fetch languages"
+          );
+          setLanguages([]);
+        }
+      } finally {
+        if (!cancelled) setLanguageLoading(false);
+      }
+    };
+    loadLanguages();
+    return () => {
+      cancelled = true;
+    };
+  }, [languageReloadKey]);
+
+  // When editing, the course's language may be inactive and so missing from
+  // the active list; keep it selectable so the form still validates.
+  const currentLanguageId =
+    currentCourse?.languageId || currentCourse?.language?.id || "";
+  const languageOptions =
+    currentLanguageId && !languages.some((l) => l.id === currentLanguageId)
+      ? [
+          ...languages,
+          {
+            id: currentLanguageId,
+            name: currentCourse?.language?.name || "Current language",
+          },
+        ]
+      : languages;
   useEffect(() => {
     if (currentCourse) {
       console.log(`Current course details : ${JSON.stringify(currentCourse)}`);
@@ -496,6 +548,9 @@ const anyUploading = thumbnailUploading || facultyUploading;
 
       setThumbnailUrl(currentCourse.thumbnail || "");
       setFaculty(currentCourse.faculty || []);
+      setLanguageId(
+        currentCourse.languageId || currentCourse.language?.id || ""
+      );
     } else {
       setForm({
         title: "",
@@ -504,6 +559,7 @@ const anyUploading = thumbnailUploading || facultyUploading;
       });
       setThumbnailUrl("");
       setFaculty([]);
+      setLanguageId("");
     }
   }, [currentCourse]);
 
@@ -576,6 +632,7 @@ const anyUploading = thumbnailUploading || facultyUploading;
       newErrors.description = "This field is required";
     if (!thumbnailUrl) newErrors.thumbnail = "This field is required";
     if (!form.price) newErrors.price = "This field is required";
+    if (!languageId) newErrors.languageId = "This field is required";
     if (faculty.length === 0) newErrors.faculty = "This field is required";
 
     if (!newErrors.title) {
@@ -605,19 +662,22 @@ const anyUploading = thumbnailUploading || facultyUploading;
       duration: 600,
       level: "BEGINNER",
       faculty,
+      languageId,
     };
 
     try {
       if (currentCourse) {
         await updateCourse(payload);
-        onSuccess(currentCourse.id);
+        onSuccess(currentCourse.id, languageId);
       } else {
         const courseId = await createCourse(payload);
-        onSuccess(courseId);
+        onSuccess(courseId, languageId);
       }
     } catch (error) {
       console.error("Failed to save course:", error);
-      alert("Failed to save. Please try again.");
+      toast.error(
+        error?.response?.data?.message || "Failed to save. Please try again."
+      );
     }
   };
 
@@ -658,6 +718,49 @@ const anyUploading = thumbnailUploading || facultyUploading;
                 {errors.description && (
                   <p className="text-xs text-red-500 mt-1">
                     {errors.description}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="course-language"
+                  className="block font-medium mb-1"
+                >
+                  Language <span className="text-red-600">*</span>
+                </label>
+                <select
+                  id="course-language"
+                  className="w-full border border-[#a09f9f] rounded-lg px-4 py-2 outline-gray-400 bg-white capitalize disabled:bg-gray-50"
+                  value={languageId}
+                  disabled={languageLoading}
+                  onChange={(e) => {
+                    setLanguageId(e.target.value);
+                    setErrors((p) => ({ ...p, languageId: "" }));
+                  }}
+                >
+                  <option value="">
+                    {languageLoading ? "Loading languages..." : "Select language"}
+                  </option>
+                  {languageOptions.map((language) => (
+                    <option key={language.id} value={language.id}>
+                      {language.name}
+                    </option>
+                  ))}
+                </select>
+                {errors.languageId && (
+                  <p className="text-xs text-red-500 mt-1">{errors.languageId}</p>
+                )}
+                {languageError && (
+                  <p className="text-xs text-red-500 mt-1">
+                    {languageError}{" "}
+                    <button
+                      type="button"
+                      onClick={() => setLanguageReloadKey((k) => k + 1)}
+                      className="font-medium underline hover:text-red-700"
+                    >
+                      Retry
+                    </button>
                   </p>
                 )}
               </div>

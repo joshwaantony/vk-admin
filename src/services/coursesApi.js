@@ -7,6 +7,28 @@ export const getAllCourses = async () => {
   return res.data;
 };
 
+/* ================= PUBLISHED COURSES (DISPLAY ORDER) ================= */
+// Published courses for ordering.
+// - languageId (UUID) given  -> that language's courses, in its order
+// - languageId omitted       -> every published course, global order
+export const getPublishedCoursesApi = async (languageId, config = {}) => {
+  const res = await axiosInstance.get("/admin/courses/published", {
+    ...config,
+    params: languageId ? { languageId } : undefined,
+  });
+  return res.data;
+};
+
+// Always send the COMPLETE ordered list for the scope.
+// Global ordering must omit languageId entirely.
+export const reorderCoursesApi = async (orderedCourseIds, languageId) => {
+  const body = languageId
+    ? { languageId, orderedCourseIds }
+    : { orderedCourseIds };
+  const res = await axiosInstance.put("/admin/courses/reorder", body);
+  return res.data;
+};
+
 /* ================= CREATE COURSE ================= */
 export const createCourseApi = async (payload) => {
   const res = await axiosInstance.post("/courses", payload);

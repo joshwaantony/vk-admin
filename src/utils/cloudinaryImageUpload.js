@@ -15,7 +15,35 @@ const getFileExtension = (file) => {
   return file?.type?.split("/")?.[1]?.toLowerCase() || "";
 };
 
-export const uploadImageToCloudinary = async (file, purpose) => {
+// Uploads with XHR so progress can be reported (fetch has no upload progress).
+const postWithProgress = (url, body, onProgress) =>
+  new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      let data = null;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = null;
+      }
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, data });
+    };
+    xhr.onerror = () => reject(new Error("Network error while uploading image"));
+    xhr.onabort = () => reject(new Error("Image upload was cancelled"));
+    xhr.send(body);
+  });
+
+/**
+ * @param {File} file
+ * @param {string} purpose one of ALLOWED_PURPOSES
+ * @param {{ onProgress?: (percent: number) => void }} [options]
+ * @returns {Promise<string>} Cloudinary secure_url
+ */
+export const uploadImageToCloudinary = async (file, purpose, options = {}) => {
   if (!file) return "";
 
   if (!purpose || !ALLOWED_PURPOSES.includes(purpose)) {
@@ -65,19 +93,29 @@ export const uploadImageToCloudinary = async (file, purpose) => {
     formData.append("upload_preset", signatureData.uploadPreset);
   }
 
-  const res = await fetch(signatureData.uploadUrl, {
-    method: "POST",
-    body: formData,
-  });
-
+  let ok;
   let data = null;
-  try {
-    data = await res.json();
-  } catch (e) {
-    data = null;
+
+  if (typeof options.onProgress === "function") {
+    ({ ok, data } = await postWithProgress(
+      signatureData.uploadUrl,
+      formData,
+      options.onProgress
+    ));
+  } else {
+    const res = await fetch(signatureData.uploadUrl, {
+      method: "POST",
+      body: formData,
+    });
+    ok = res.ok;
+    try {
+      data = await res.json();
+    } catch (e) {
+      data = null;
+    }
   }
 
-  if (!res.ok) {
+  if (!ok) {
     const message =
       data?.error?.message ||
       data?.message ||
