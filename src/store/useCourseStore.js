@@ -18,6 +18,14 @@ import {
   validateOrder,
 } from "@/components/Course/CourseList/reorder";
 
+const toCourseArray = (body) => {
+  const data = body?.data;
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.courses)) return data.courses;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+};
+
 // Only the latest published-courses request may write to the store, so a
 // slow response for a previously selected language can never overwrite the
 // current one.
@@ -50,9 +58,8 @@ fetchCourses: async () => {
 
     console.log("COURSES API:", res);
 
-    set({
-      courses: res?.data || []   // ✅ FIXED
-    });
+    // Accepts { data: [...] } and { data: { courses: [...] } }.
+    set({ courses: toCourseArray(res) });
 
   } catch (error) {
     console.error("Fetch error:", error);

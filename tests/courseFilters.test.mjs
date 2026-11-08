@@ -156,4 +156,12 @@ describe("filterCourses", () => {
   test("handles missing input", () => {
     assert.deepEqual(filterCourses(undefined, { status: "DRAFT" }), []);
   });
+
+  test("never throws on a non-array (unexpected API shape)", () => {
+    const bad = { courses: COURSES, pagination: {} };
+    assert.deepEqual(filterCourses(bad, { status: "DRAFT" }), []);
+    assert.deepEqual(getLanguageOptions(bad), []);
+    assert.deepEqual(countByStatus(bad), { DRAFT: 0, PUBLISHED: 0, ARCHIVED: 0 });
+    assert.deepEqual(getLanguageOptions("oops"), []);
+  });
 });

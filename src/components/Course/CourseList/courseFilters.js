@@ -13,6 +13,9 @@ export const SORTERS = {
     (Number(b.totalVideos) || 0) - (Number(a.totalVideos) || 0),
 };
 
+// Never throw on a non-array (e.g. an unexpected API response shape).
+const asArray = (value) => (Array.isArray(value) ? value : []);
+
 /** Language id of a course, from `languageId` or the nested `language`. */
 export const courseLanguageId = (course) =>
   course?.languageId || course?.language?.id || null;
@@ -23,7 +26,7 @@ export const courseLanguageId = (course) =>
  */
 export function getLanguageOptions(courses) {
   const map = new Map();
-  (courses || []).forEach((c) => {
+  asArray(courses).forEach((c) => {
     const id = courseLanguageId(c);
     if (id && !map.has(id)) map.set(id, c.language?.name || "Unknown");
   });
@@ -44,7 +47,7 @@ export function matchesLanguage(course, languageId) {
 /** Course counts per status, limited to the selected language. */
 export function countByStatus(courses, languageId = ALL_LANGUAGES) {
   const counts = { DRAFT: 0, PUBLISHED: 0, ARCHIVED: 0 };
-  (courses || []).forEach((c) => {
+  asArray(courses).forEach((c) => {
     if (matchesLanguage(c, languageId) && counts[c.status] !== undefined) {
       counts[c.status] += 1;
     }
@@ -61,7 +64,7 @@ export function filterCourses(
   { status, languageId = ALL_LANGUAGES, search = "", sort = "default" } = {}
 ) {
   const q = search.trim().toLowerCase();
-  let list = (courses || []).filter(
+  let list = asArray(courses).filter(
     (c) =>
       (!status || c.status === status) &&
       matchesLanguage(c, languageId) &&

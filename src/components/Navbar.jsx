@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
-import { IoIosSettings } from "react-icons/io";
+import React, { useEffect, useState } from "react";
 import { RiLogoutBoxRFill } from "react-icons/ri";
 import useAuthStore from "@/store/useAuthStore";
 import { useRouter } from "next/navigation";
@@ -9,10 +8,32 @@ import toast from "react-hot-toast";
 
 function Navbar() {
   const logout = useAuthStore((state) => state.logout);
-  const user = useAuthStore((state) => state.user);
   const router = useRouter();
 
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  // Time-based greeting + today's date. Set on the client only so the
+  // server-rendered HTML never mismatches the browser's clock.
+  const [greeting, setGreeting] = useState("");
+  const [today, setToday] = useState("");
+  useEffect(() => {
+    const update = () => {
+      const now = new Date();
+      const h = now.getHours();
+      setGreeting(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening");
+      setToday(
+        now.toLocaleDateString("en-IN", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      );
+    };
+    update();
+    const id = setInterval(update, 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -29,16 +50,13 @@ function Navbar() {
       {/* ================= NAVBAR ================= */}
       <div className="flex justify-between items-center px-10 py-3 border-b shadow-sm border-blue-50">
         <div>
-          <h1 className="text-[22px] xl:text-[26px] text-[#1f285b] font-semibold">
-            Welcome, {user?.name || "User"}
+          <h1 className="text-[20px] xl:text-[22px] text-[#1f285b] font-semibold leading-tight">
+            {greeting || "Hello"}
           </h1>
+          <p className="mt-0.5 text-xs text-slate-500 min-h-4">{today}</p>
         </div>
 
         <div className="flex justify-center gap-[30px] xl:gap-[50px]">
-          <button className="text-[#606060] flex items-center gap-[3px] text-[15px]">
-            <IoIosSettings className="size-[24px]" /> Settings
-          </button>
-
           <button
             onClick={() => setShowLogoutModal(true)}
             className="text-[#606060] flex items-center gap-[3px] text-[15px]"
