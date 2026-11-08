@@ -131,28 +131,31 @@ function Sidebar() {
     },
   ];
 
-  const isActive = (path) => pathname === path;
+  // Nested routes (e.g. /courses/order) keep their parent menu item active.
+  const isActive = (path) =>
+    pathname === path || pathname?.startsWith(`${path}/`);
 
   return (
-    <aside className="w-full md:w-72 min-h-screen bg-[#1F304A] flex flex-col items-center py-8">
-      {/* Profile */}
-      <div className="text-[90px] md:text-[100px] text-gray-300">
-        <CgProfile />
-      </div>
-
-      <div className="flex flex-col items-center mb-10">
-        <p className="mt-2 text-white text-2xl md:text-3xl font-semibold">
-          John David
+    <aside className="w-full md:w-72 h-screen overflow-y-auto bg-[#1F304A] flex flex-col items-center py-6">
+      {/* Brand */}
+      <div className="flex flex-col items-center mb-6 shrink-0">
+        <img
+          src="/admin/vklogo.png"
+          alt="VK Accountancy logo"
+          className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-white object-contain"
+        />
+        <p className="mt-3 text-white text-xl md:text-2xl font-semibold">
+          VK Accountancy
         </p>
       </div>
 
       {/* Menu */}
-      <nav className="w-full px-4 md:px-6 space-y-3">
+      <nav className="w-full px-4 md:px-6 space-y-1.5">
         {menuItems.map((item) => (
           <Link
             key={item.name}
             href={item.path}
-            className={`flex items-center gap-4 w-full px-5 py-4 rounded-xl transition-all duration-200
+            className={`flex items-center gap-4 w-full px-5 py-3 rounded-xl transition-all duration-200
               ${
                 isActive(item.path)
                   ? "bg-[#8BA8D4] text-white font-semibold shadow-md"

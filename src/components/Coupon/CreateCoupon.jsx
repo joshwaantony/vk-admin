@@ -1,4 +1,5 @@
 "use client";
+import toast from "react-hot-toast";
 import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import useCouponStore from "@/store/useCouponStore";
@@ -63,7 +64,7 @@ export default function CreateCoupon({
       !formData.rate ||
       !formData.expiry
     ) {
-      alert("Please fill required fields");
+      toast.error("Please fill required fields");
       return;
     }
 

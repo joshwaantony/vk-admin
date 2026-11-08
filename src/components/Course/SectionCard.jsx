@@ -8,6 +8,8 @@ import { GoPlus } from "react-icons/go";
 import { LiaSave } from "react-icons/lia";
 import { MdDelete } from "react-icons/md";
 import useSectionStore from "@/store/useSectionStore";
+import { Trash2 } from "lucide-react";
+import ConfirmDialog from "@/components/Course/CourseList/ConfirmDialog";
 
 export default function SectionCard({
   sectionId,
@@ -104,14 +106,16 @@ const handleCancelEdit = () => {
     }
   };
 
-  const handleDeleteSection = async () => {
+  // In-app confirmation instead of the browser's "localhost says" confirm().
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  const handleDeleteSection = () => {
     if (deleting || actionsDisabled) return;
+    setConfirmDeleteOpen(true);
+  };
 
-    const confirmDelete = confirm(
-      "Are you sure you want to delete this section?"
-    );
-
-    if (!confirmDelete) return;
+  const deleteSectionConfirmed = async () => {
+    if (deleting) return;
 
     const toastId = toast.loading("Deleting section...");
 
@@ -121,10 +125,14 @@ const handleCancelEdit = () => {
       await deleteSection(sectionId);
 
       toast.success("Section deleted", { id: toastId });
+      setConfirmDeleteOpen(false);
       onDelete?.(sectionId);
     } catch (error) {
       console.error(error);
-      toast.error("Failed to delete section", { id: toastId });
+      toast.error(
+        error?.response?.data?.message || "Failed to delete section",
+        { id: toastId }
+      );
     } finally {
       setDeleting(false);
     }
@@ -218,6 +226,26 @@ const handleCancelEdit = () => {
 </div>
 
       {isOpen && children}
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete section?"
+        description={
+          <>
+            <span className="font-medium text-slate-900">
+              {title || "This section"}
+            </span>{" "}
+            and its lessons will be deleted. This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        busyLabel="Deleting…"
+        tone="danger"
+        icon={Trash2}
+        busy={deleting}
+        onConfirm={deleteSectionConfirmed}
+        onClose={() => !deleting && setConfirmDeleteOpen(false)}
+      />
     </div>
   );
 }

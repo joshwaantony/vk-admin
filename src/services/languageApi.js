@@ -5,8 +5,8 @@ export const getLanguagesApi = async () => {
   return res.data;
 };
 
-export const getActiveLanguagesApi = async () => {
-  const res = await axiosInstance.get("/languages");
+export const getActiveLanguagesApi = async (config = {}) => {
+  const res = await axiosInstance.get("/languages", config);
   return res.data;
 };
 
